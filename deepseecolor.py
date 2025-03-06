@@ -5,6 +5,7 @@
 
 import os
 import argparse
+import numpy as np
 
 import torch
 from time import time
@@ -19,7 +20,7 @@ try:
 except:
     trange = range
 
-class paired_rgb_depth_dataset(Dataset):
+class PairedRGBDepthDataset(Dataset):
     def __init__(self, image_path, depth_path, openni_depth, mask_max_depth, image_height, image_width, device):
         self.image_dir = image_path
         self.depth_dir = depth_path
@@ -152,7 +153,7 @@ def main(args):
     torch.manual_seed(seed)
     torch.autograd.set_detect_anomaly(True)
 
-    train_dataset = paired_rgb_depth_dataset(args.images, args.depth, args.depth_16u, args.mask_max_depth, args.height,
+    train_dataset = PairedRGBDepthDataset(args.images, args.depth, args.depth_16u, args.mask_max_depth, args.height,
                                              args.width, args.device)
     save_dir = args.output
     os.makedirs(save_dir, exist_ok=True)
@@ -169,8 +170,8 @@ def main(args):
     total_bs_evals = 0
     total_at_eval_time = 0.
     total_at_evals = 0
+    bs_loss_arr, da_loss_arr = [], []
     for j, (left, depth, fnames) in enumerate(dataloader):
-        print("training")
         image_batch = left
         batch_size = image_batch.shape[0]
         for iter in trange(args.init_iters if j == 0 else args.iters):  # Run first batch for 500 iters, rest for 50
@@ -198,6 +199,8 @@ def main(args):
             total_at_eval_time += time() - start
             total_at_evals += batch_size
         print("Losses: %.9f %.9f" % (bs_loss.item(), da_loss.item()))
+        bs_loss_arr.append(bs_loss.item())
+        da_loss_arr.append(da_loss.item())
         avg_bs_time = total_bs_eval_time / total_bs_evals * 1000
         avg_at_time = total_at_eval_time / total_at_evals * 1000
         avg_time = avg_bs_time + avg_at_time
@@ -218,7 +221,14 @@ def main(args):
                     save_image(backscatter_img[i], "%s/%s-backscatter.png" % (save_dir, names[n].rstrip('.png')))
                     save_image(f_img[i], "%s/%s-f.png" % (save_dir, names[n].rstrip('.png')))
                 save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
-
+        if j % 10 == 0:
+            torch.save(bs_model.cpu().state_dict(), 'bs_model.pt')
+            torch.save(da_model.cpu().state_dict(), 'da_model.pt')
+            bs_model.to(args.device)
+            da_model.to(args.device)
+        np.save('bs_loss.npy', bs_loss_arr, allow_pickle=True)
+        np.save('da_loss.npy', da_loss_arr, allow_pickle=True)
+        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
