@@ -163,6 +163,11 @@ def main(args):
     da_model = DeattenuateNet().to(device=args.device)
     bs_criterion = BackscatterLoss().to(device=args.device)
     da_criterion = DeattenuateLoss().to(device=args.device)
+    
+    if args.bs_weights and args.da_weights:
+        bs_model.load_state_dict(torch.load(args.bs_weights))
+        da_model.load_state_dict(torch.load(args.da_weights))
+    
     bs_optimizer = torch.optim.Adam(bs_model.parameters(), lr=args.init_lr)
     da_optimizer = torch.optim.Adam(da_model.parameters(), lr=args.init_lr)
     skip_right = True
@@ -221,11 +226,10 @@ def main(args):
                     save_image(backscatter_img[i], "%s/%s-backscatter.png" % (save_dir, names[n].rstrip('.png')))
                     save_image(f_img[i], "%s/%s-f.png" % (save_dir, names[n].rstrip('.png')))
                 save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
-        if j % 10 == 0:
-            torch.save(bs_model.cpu().state_dict(), 'bs_model.pt')
-            torch.save(da_model.cpu().state_dict(), 'da_model.pt')
-            bs_model.to(args.device)
-            da_model.to(args.device)
+        torch.save(bs_model.cpu().state_dict(), 'bs_model.pt')
+        torch.save(da_model.cpu().state_dict(), 'da_model.pt')
+        bs_model.to(args.device)
+        da_model.to(args.device)
         np.save('bs_loss.npy', bs_loss_arr, allow_pickle=True)
         np.save('da_loss.npy', da_loss_arr, allow_pickle=True)
         
@@ -249,6 +253,8 @@ if __name__ == '__main__':
     parser.add_argument('--iters', type=int, default=50, help='How many iterations to refine each image batch')
     parser.add_argument('--init_lr', type=float, default=1e-2, help='Initial learning rate for Adam optimizer')
     parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--bs_weights', type=str, default=None, help='BS Model weights to re-train')
+    parser.add_argument('--da_weights', type=str, default=None, help='DA Model weights to re-train')
 
     args = parser.parse_args()
     main(args)
