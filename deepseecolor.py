@@ -230,8 +230,8 @@ def main(args):
         torch.save(da_model.cpu().state_dict(), '%s/da_model.pt' % save_dir)
         bs_model.to(args.device)
         da_model.to(args.device)
-        np.save('bs_loss.npy', bs_loss_arr, allow_pickle=True)
-        np.save('da_loss.npy', da_loss_arr, allow_pickle=True)
+        np.save('%s/bs_loss.npy' % save_dir, bs_loss_arr, allow_pickle=True)
+        np.save('%s/da_loss.npy' % save_dir, da_loss_arr, allow_pickle=True)
         
 
 if __name__ == '__main__':
