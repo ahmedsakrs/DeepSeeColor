@@ -158,7 +158,7 @@ def main(args):
     save_dir = args.output
     os.makedirs(save_dir, exist_ok=True)
     target_batch_size = args.batch_size
-    dataloader = DataLoader(train_dataset, batch_size=target_batch_size, shuffle=False)
+    dataloader = DataLoader(train_dataset, batch_size=target_batch_size, shuffle=True)
     bs_model = BackscatterNet().to(device=args.device)
     da_model = DeattenuateNet().to(device=args.device)
     bs_criterion = BackscatterLoss().to(device=args.device)
@@ -171,67 +171,44 @@ def main(args):
     bs_optimizer = torch.optim.Adam(bs_model.parameters(), lr=args.init_lr)
     da_optimizer = torch.optim.Adam(da_model.parameters(), lr=args.init_lr)
     skip_right = True
-    total_bs_eval_time = 0.
-    total_bs_evals = 0
-    total_at_eval_time = 0.
-    total_at_evals = 0
-    bs_loss_arr, da_loss_arr = [], []
-    for j, (left, depth, fnames) in enumerate(dataloader):
-        image_batch = left
-        batch_size = image_batch.shape[0]
-        for iter in trange(args.init_iters if j == 0 else args.iters):  # Run first batch for 500 iters, rest for 50
-            start = time()
-            direct, backscatter = bs_model(image_batch, depth)
+    for i in range(args.epochs):
+        total_bs_loss = 0
+        total_da_loss = 0
+        for j, (left, depth, fnames) in trange(enumerate(dataloader)):
+            image_batch = left
+            batch_size = image_batch.shape[0]
+            direct, _ = bs_model(image_batch, depth)
             bs_loss = bs_criterion(direct)
             bs_optimizer.zero_grad()
             bs_loss.backward()
             bs_optimizer.step()
-            total_bs_eval_time += time() - start
-            total_bs_evals += batch_size
-        direct_mean = direct.mean(dim=[2, 3], keepdim=True)
-        direct_std = direct.std(dim=[2, 3], keepdim=True)
-        direct_z = (direct - direct_mean) / direct_std
-        clamped_z = torch.clamp(direct_z, -5, 5)
-        direct_no_grad = torch.clamp(
+            direct_mean = direct.mean(dim=[2, 3], keepdim=True)
+            direct_std = direct.std(dim=[2, 3], keepdim=True)
+            direct_z = (direct - direct_mean) / direct_std
+            clamped_z = torch.clamp(direct_z, -5, 5)
+            direct_no_grad = torch.clamp(
             (clamped_z * direct_std) + torch.maximum(direct_mean, torch.Tensor([1. / 255]).to(device=args.device)), 0, 1).detach()
-        for iter in trange(args.init_iters if j == 0 else args.iters):  # Run first batch for 500 iters, rest for 50
-            start = time()
             f, J = da_model(direct_no_grad, depth)
             da_loss = da_criterion(direct_no_grad, J)
             da_optimizer.zero_grad()
             da_loss.backward()
             da_optimizer.step()
-            total_at_eval_time += time() - start
-            total_at_evals += batch_size
-        print("Losses: %.9f %.9f" % (bs_loss.item(), da_loss.item()))
-        bs_loss_arr.append(bs_loss.item())
-        da_loss_arr.append(da_loss.item())
-        avg_bs_time = total_bs_eval_time / total_bs_evals * 1000
-        avg_at_time = total_at_eval_time / total_at_evals * 1000
-        avg_time = avg_bs_time + avg_at_time
-        print("Avg time per eval: %f ms (%f ms bs, %f ms at)" % (avg_time, avg_bs_time, avg_at_time))
-        img = image_batch.cpu()
-        direct_img = torch.clamp(direct_no_grad, 0., 1.).cpu()
-        backscatter_img = torch.clamp(backscatter, 0., 1.).detach().cpu()
-        f_img = f.detach().cpu()
-        f_img = f_img / f_img.max()
+            total_bs_loss += bs_loss.item()
+            total_da_loss += da_loss.item()
+        
+        total_bs_loss /= len(dataloader)
+        total_da_loss /= len(dataloader)
+        print("Losses: %.9f %.9f" % (total_bs_loss, total_da_loss))
         J_img = torch.clamp(J, 0., 1.).cpu()
         for side in range(1 if skip_right else 2):
-            side_name = 'left' if side == 0 else 'right'
             names = fnames[side]
             for n in range(batch_size):
                 i = n + target_batch_size * side
-                if args.save_intermediates:
-                    save_image(direct_img[i], "%s/%s-direct.png" % (save_dir, names[n].rstrip('.png')))
-                    save_image(backscatter_img[i], "%s/%s-backscatter.png" % (save_dir, names[n].rstrip('.png')))
-                    save_image(f_img[i], "%s/%s-f.png" % (save_dir, names[n].rstrip('.png')))
                 save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
         torch.save(bs_model.cpu().state_dict(), '%s/bs_model.pt' % save_dir)
         torch.save(da_model.cpu().state_dict(), '%s/da_model.pt' % save_dir)
         bs_model.to(args.device)
         da_model.to(args.device)
-        np.save('%s/bs_loss.npy' % save_dir, bs_loss_arr, allow_pickle=True)
-        np.save('%s/da_loss.npy' % save_dir, da_loss_arr, allow_pickle=True)
         
 
 if __name__ == '__main__':
@@ -249,8 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=None, help='Seed to initialize network weights (use 1337 to replicate paper results)')
     parser.add_argument('--batch_size', type=int, default=10, help='Batch size for processing images')
     parser.add_argument('--save_intermediates', action='store_true', default=False, help='Set to True to save intermediate files (backscatter, attenuation, and direct images)')
-    parser.add_argument('--init_iters', type=int, default=500, help='How many iterations to refine the first image batch (should be >= iters)')
-    parser.add_argument('--iters', type=int, default=50, help='How many iterations to refine each image batch')
+    parser.add_argument('--epochs', type=int, default=50, help='How many epochs')
     parser.add_argument('--init_lr', type=float, default=1e-2, help='Initial learning rate for Adam optimizer')
     parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--bs_weights', type=str, default=None, help='BS Model weights to re-train')
