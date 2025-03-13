@@ -15,10 +15,7 @@ import torchvision.transforms as transforms
 from torchvision.utils import save_image
 import kornia.morphology as morph
 from PIL import Image
-try:
-    from tqdm import trange
-except:
-    trange = range
+from tqdm import tqdm
 
 class PairedRGBDepthDataset(Dataset):
     def __init__(self, image_path, depth_path, openni_depth, mask_max_depth, image_height, image_width, device):
@@ -174,7 +171,7 @@ def main(args):
     for i in range(args.epochs):
         total_bs_loss = 0
         total_da_loss = 0
-        for j, (left, depth, fnames) in trange(enumerate(dataloader)):
+        for (left, depth, fnames) in tqdm(dataloader):
             image_batch = left
             batch_size = image_batch.shape[0]
             direct, _ = bs_model(image_batch, depth)
