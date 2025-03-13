@@ -197,7 +197,7 @@ def main(args):
                 names = fnames[side]
                 for n in range(batch_size):
                     i = n + target_batch_size * side
-                    save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
+                    # save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
         
         total_bs_loss /= len(dataloader)
         total_da_loss /= len(dataloader)
