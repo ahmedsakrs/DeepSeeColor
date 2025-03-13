@@ -192,16 +192,17 @@ def main(args):
             da_optimizer.step()
             total_bs_loss += bs_loss.item()
             total_da_loss += da_loss.item()
+            J_img = torch.clamp(J, 0., 1.).cpu()
+            for side in range(1 if skip_right else 2):
+                names = fnames[side]
+                for n in range(batch_size):
+                    i = n + target_batch_size * side
+                    save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
         
         total_bs_loss /= len(dataloader)
         total_da_loss /= len(dataloader)
         print("Losses: %.9f %.9f" % (total_bs_loss, total_da_loss))
-        J_img = torch.clamp(J, 0., 1.).cpu()
-        for side in range(1 if skip_right else 2):
-            names = fnames[side]
-            for n in range(batch_size):
-                i = n + target_batch_size * side
-                save_image(J_img[i], "%s/%s-corrected.png" % (save_dir, names[n].rstrip('.png')))
+        
         torch.save(bs_model.cpu().state_dict(), '%s/bs_model.pt' % save_dir)
         torch.save(da_model.cpu().state_dict(), '%s/da_model.pt' % save_dir)
         bs_model.to(args.device)
